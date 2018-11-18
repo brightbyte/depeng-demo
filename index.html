@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+	<title>Network | Basic usage</title>
+
+	<script type="text/javascript" src="vis/vis.min.js"></script>
+	<link href="vis/vis.min.css" rel="stylesheet" type="text/css">
+
+	<style type="text/css">
+		#mynetwork {
+			width: 600px;
+			height: 600px;
+			border: 1px solid lightgray;
+		}
+	</style>
+</head>
+<body>
+
+<p>
+	Create a simple network with some nodes and edges.
+</p>
+
+<div id="mynetwork"><div class="vis-network" style="position: relative; overflow: hidden; touch-action: pan-y; -moz-user-select: none; width: 100%; height: 100%;" tabindex="900"><canvas style="position: relative; touch-action: none; -moz-user-select: none; width: 100%; height: 100%;" width="600" height="400"></canvas></div></div>
+
+<script type="text/javascript">
+	var nodes = new vis.DataSet([]);
+	var edges = new vis.DataSet([]);
+
+	// create a network
+	var container = document.getElementById('mynetwork');
+	var data = {
+		nodes: nodes,
+		edges: edges
+	};
+	var options = {
+	layout: {
+		hierarchical: {
+			sortMethod: 'directed',
+			direction: 'DU',
+			nodeSpacing: 300
+		}
+	},
+	physics: {
+		enabled: false
+	},
+	edges: {
+		smooth: true,
+		arrows: { to : true }
+	}
+	};
+	var network = new vis.Network(container, data, options);
+	
+	var eng = {
+		update: function( id, dependencies = [], fields = {} ) {
+			fields.id = id;
+			fields.label = id;
+			fields.shape = dependencies.length > 0 ? 'ellipse' : 'box';
+			fields.timestamp = fields.timestamp || Date.now();
+			fields.state = fields.state || 'clean';
+			fields.color = this.getColor( fields );
+			nodes.update( fields );
+			
+			var newEdgeIds = [];
+			
+			for ( k in dependencies ) {
+				var dep = dependencies[k]
+				if ( ! nodes.get( dep ) ) {
+					// create "blank" node
+					this.update( dep );
+				}
+				
+				var edgeId = id + ">>>" + dep;
+				newEdgeIds.push( edgeId );
+				edges.update( { id: edgeId, from: id, to: dep } );
+			}
+
+			var obsoleteEdges = network.getConnectedEdges( id ).filter(
+				function ( edgeId ) {
+					edge = edges.get( edgeId );
+					return edge.from == id && !newEdgeIds.includes( edgeId );
+				}
+			);
+			
+			edges.remove( obsoleteEdges );
+			
+			this.touch( fields, fields );
+		},
+		
+		touch: function( node ) {
+			var affected = network.getConnectedNodes( node.id, 'from' );
+			
+			for ( i in affected ) {
+				affNode = nodes.get( affected[i] );
+				this.evalState( affNode );
+			}
+		},
+
+		evalState: function( node ) {
+			var dependencies = network.getConnectedNodes( node.id, 'to' );
+
+			var clean = true;
+			var ready = true;
+
+			for ( d in dependencies ) {
+				var depNode = nodes.get( dependencies[d] );
+				
+				clean &= ( depNode.timestamp <= node.timestamp );
+				ready &= ( depNode.state == 'clean' );
+			}
+			
+			var newState;
+			if ( clean ) newState = 'clean';
+			else if ( ready ) newState = 'ready';
+			else newState = 'dirty';
+			
+			if ( newState != node.state ) {
+				console.log( 'evalState( ' +  node.id + '): ' + node.state + ' -> ' + newState );
+
+				node.state = newState;
+				node.color = this.getColor( node );
+				nodes.update( node );
+			}
+		},
+
+		getColor: function( node ) {
+			switch( node.state ) {
+				case 'clean':
+					return 'LightSteelBlue'
+				case 'dirty':
+					return 'red'
+				case 'ready':
+					return 'green'
+				default:
+					return 'LightGrey'
+			} 
+		}
+	};
+	
+	eng.update( 'enwp/Content.main/Test' );
+	eng.update( 'enwp/Content.main/Template:Infoobox' );
+	eng.update( 'enwp/ParserOutput/Test', [
+	'enwp/Content.main/Test', 'enwp/Content.main/Template:Infoobox'
+	] );
+	eng.update( 'enwp/HtmlPage/Test', [ 'enwp/ParserOutput/Test' ] );
+	eng.update( 'enwp/HtmlSummary/Test', [ 'enwp/ParserOutput/Test', 'enwp/HtmlPage/Test' ] );
+	
+	// for debuging
+	window.depeng = eng;
+	window.network = network;
+	window.nodes = nodes;
+	window.edges = edges;
+</script>
+
+
+
+
+</body></html>
